@@ -61,7 +61,6 @@ canvas{display:block;}
 .ov-btn{margin-top:6px;padding:12px 32px;border-radius:99px;background:#f5c030;border:3px solid #c49010;color:#3a2800;font-size:15px;font-weight:800;text-transform:uppercase;letter-spacing:1px;cursor:pointer;box-shadow:0 4px 0 #c49010;transition:transform .18s;}
 .ov-btn:active{transform:scale(.93) translateY(2px);box-shadow:0 1px 0 #c49010;}
 
-/* Tombol khusus instal */
 .btn-green { background: #4caf50; border-color: #2e7d32; color: #fff; box-shadow: 0 4px 0 #2e7d32; }
 .btn-green:active { box-shadow: 0 1px 0 #2e7d32; }
 
@@ -161,8 +160,9 @@ const gMat=new CANNON.Material('g'),pMat=new CANNON.Material('p');
 phys.addContactMaterial(new CANNON.ContactMaterial(gMat,pMat,{friction:.4,restitution:.05}));
 phys.addContactMaterial(new CANNON.ContactMaterial(pMat,pMat,{friction:.2,restitution:.28}));
 
+// Ukuran Map Fisika dikembalikan normal (Lebar 30x30 meter)
 const groundBody = new CANNON.Body({ mass: 0, material: gMat });
-groundBody.addShape(new CANNON.Box(new CANNON.Vec3(25, 0.5, 25))); 
+groundBody.addShape(new CANNON.Box(new CANNON.Vec3(15, 0.5, 15))); 
 groundBody.position.set(0, -0.5, 0); 
 groundBody.isPlatform = true;
 phys.addBody(groundBody);
@@ -171,28 +171,38 @@ phys.addBody(groundBody);
 const gltfLoader = new THREE.GLTFLoader();
 let charTemplate = null;
 let assetsLoaded = 0;
+const statusEl = document.getElementById('load-status');
 
 function checkLoadReady() {
     assetsLoaded++;
     if(assetsLoaded >= 2) {
-        document.getElementById('load-status').textContent = "✅ Semua Aset Siap!";
+        statusEl.textContent = "✅ Siap Dimainkan!";
         document.getElementById('btn-start').style.display = 'block';
     }
 }
 
+// 1. Load Map (Ukuran Normal 1x1)
 gltfLoader.load('./map/map.glb', (gltf) => {
-    gltf.scene.scale.set(3, 3, 3);
     scene.add(gltf.scene);
     gltf.scene.traverse(c => { if(c.isMesh) { c.castShadow = true; c.receiveShadow = true; } });
     checkLoadReady();
-}, undefined, (err) => { checkLoadReady(); });
+}, undefined, (err) => { 
+    console.error("Gagal load Map", err);
+    statusEl.innerHTML += "<br>⚠️ Error: map.glb tidak ditemukan!";
+    checkLoadReady(); 
+});
 
+// 2. Load Karakter
 gltfLoader.load('./karakter/karakter.glb', (gltf) => {
     charTemplate = gltf.scene;
     charTemplate.traverse(c => { if(c.isMesh) { c.castShadow = true; c.receiveShadow = true; } });
     players.forEach(p => p.attachGLB()); 
     checkLoadReady();
-}, undefined, (err) => { checkLoadReady(); });
+}, undefined, (err) => { 
+    console.error("Gagal load Karakter", err);
+    statusEl.innerHTML += "<br>⚠️ Error: karakter.glb tidak ditemukan! Cek folder.";
+    checkLoadReady(); 
+});
 
 // ── Utils ──
 function hpHex(p){return p>.6?0x4caf50:p>.3?0xff9800:0xf44336;}
@@ -211,7 +221,7 @@ function makeBar(col){
 }
 
 function getRandomSpawn() {
-  const range = 30; 
+  const range = 20; // Area spawn disesuaikan ukurannya
   return [(Math.random() - 0.5) * range, 6, (Math.random() - 0.5) * range];
 }
 
@@ -291,20 +301,22 @@ class Player{
     this.createFallbackModel();
     this.attachGLB();
 
+    // Penyesuaian Tinggi Indikator Nama & HP (karena karakter lebih kecil)
     this.nSprite=makeSprite(this.name,this.color);
-    this.nSprite.position.y=1.85;this.group.add(this.nSprite);
+    this.nSprite.position.y=1.35;this.group.add(this.nSprite);
     this.hpBg=makeBar(0x222222);this.hpFg=makeBar(this.color);
-    this.hpBg.position.set(0,1.45,.01);this.hpFg.position.set(0,1.45,.02);
+    this.hpBg.position.set(0,1.05,.01);this.hpFg.position.set(0,1.05,.02);
     this.group.add(this.hpBg);this.group.add(this.hpFg);
 
-    this.shdMesh=new THREE.Mesh(new THREE.CircleGeometry(.5,14),new THREE.MeshBasicMaterial({color:0x000000,transparent:true,opacity:.3}));
+    this.shdMesh=new THREE.Mesh(new THREE.CircleGeometry(.4,14),new THREE.MeshBasicMaterial({color:0x000000,transparent:true,opacity:.3}));
     this.shdMesh.rotation.x=-Math.PI/2;this.shdMesh.position.y=.02;
     this.group.add(this.shdMesh);
 
     scene.add(this.group);
 
+    // Fisika karakter diperkecil (Radius Bola menjadi 0.35)
     this.body=new CANNON.Body({mass:2,material:pMat,linearDamping:.2,angularDamping:1});
-    this.body.addShape(new CANNON.Sphere(.48));
+    this.body.addShape(new CANNON.Sphere(.35));
     this.body.position.set(...getRandomSpawn());
     this.body.fixedRotation=true;this.body.updateMassProperties();this.body.playerId=id;
     phys.addBody(this.body);
@@ -314,12 +326,12 @@ class Player{
     const mesh = new THREE.Group();
     const bodyMat = new THREE.MeshLambertMaterial({color: this.color});
     const skinMat = new THREE.MeshLambertMaterial({color: 0xffceb4});
-    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.35, 0.7, 16), bodyMat);
-    body.position.y = 0.35; body.castShadow = body.receiveShadow = true; mesh.add(body);
-    const head = new THREE.Mesh(new THREE.SphereGeometry(0.3, 16, 16), skinMat);
-    head.position.y = 0.95; head.castShadow = head.receiveShadow = true; mesh.add(head);
-    const visor = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.12, 0.25), new THREE.MeshLambertMaterial({color: 0x222222}));
-    visor.position.set(0, 1.0, 0.22); mesh.add(visor);
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.3, 0.6, 16), bodyMat);
+    body.position.y = 0.3; body.castShadow = body.receiveShadow = true; mesh.add(body);
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.25, 16, 16), skinMat);
+    head.position.y = 0.8; head.castShadow = head.receiveShadow = true; mesh.add(head);
+    const visor = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.1, 0.2), new THREE.MeshLambertMaterial({color: 0x222222}));
+    visor.position.set(0, 0.85, 0.18); mesh.add(visor);
     this.scaleAndCenterModel(mesh);
   }
 
@@ -333,7 +345,8 @@ class Player{
   scaleAndCenterModel(model) {
     const box = new THREE.Box3().setFromObject(model);
     const sz = new THREE.Vector3(); box.getSize(sz);
-    const sc = 1.2 / Math.max(sz.x, sz.y, sz.z);
+    // Skala Visual Karakter Diperkecil menjadi 0.8
+    const sc = 0.8 / Math.max(sz.x, sz.y, sz.z);
     model.scale.setScalar(sc);
     
     const box2 = new THREE.Box3().setFromObject(model);
@@ -370,14 +383,16 @@ class Player{
     }
     hudUpdate();
   }
-  jump(){if(this.jumpCount>=2)return;this.body.velocity.y=13;this.jumpCount++;this.onGround=false;}
+  
+  // Tenaga Lompat dikurangi (dari 13 menjadi 9)
+  jump(){if(this.jumpCount>=2)return;this.body.velocity.y=9;this.jumpCount++;this.onGround=false;}
   
   punch(all){
     if(!this.alive||this.punchCD>0||this.stunT>0)return;this.punchCD=28;
     all.forEach(p=>{
       if(p===this||!p.alive)return;
       const dx=p.px-this.px,dy=p.py-this.py,dz=p.pz-this.pz,d=Math.sqrt(dx*dx+dy*dy+dz*dz);
-      if(d<1.4){const f=10/d;p.takeDmg(16+Math.random()*9|0,dx*f,4.5,dz*f,this);shake(5);hitFx(p.group.position);}
+      if(d<1.2){const f=10/d;p.takeDmg(16+Math.random()*9|0,dx*f,4.5,dz*f,this);shake(5);hitFx(p.group.position);}
     });
   }
   grab(all){
@@ -386,7 +401,7 @@ class Player{
     all.forEach(p=>{
       if(p===this||!p.alive)return;
       const dx=p.px-this.px,dy=p.py-this.py,dz=p.pz-this.pz;
-      if(Math.sqrt(dx*dx+dy*dy+dz*dz)<1.6){
+      if(Math.sqrt(dx*dx+dy*dy+dz*dz)<1.4){
         const pw=14+this.combo*.5;p.body.velocity.set(fx*pw,8,fz*pw);
         p.takeDmg(12,fx*8,3,fz*8,this);shake(4);
       }
@@ -412,7 +427,7 @@ class Player{
     if(d2>1.5){const s=5.5;this.body.velocity.x=dx/d2*s;this.body.velocity.z=dz/d2*s;}
     if(this.onGround&&this.botJumpT<=0&&(tgt.py>this.py+1.5||Math.random()<.012)){this.jump();this.botJumpT=55;}
     const fd=Math.sqrt(dx*dx+(tgt.py-this.py)**2+dz*dz);
-    if(fd<1.4){if(this.punchCD<=0&&Math.random()<.07)this.punch(all);if(this.grabCD<=0&&Math.random()<.03)this.grab(all);}
+    if(fd<1.2){if(this.punchCD<=0&&Math.random()<.07)this.punch(all);if(this.grabCD<=0&&Math.random()<.03)this.grab(all);}
     if(fd<5.5&&this.specCD<=0&&Math.random()<.005)this.special(all);
   }
   update(all){
@@ -421,7 +436,8 @@ class Player{
     if(this.stunT>0)this.stunT--;if(this.invT>0)this.invT--;
     if(this.comboT>0)this.comboT--;else this.combo=0;
     
-    this.group.position.set(this.px, this.py - 0.48, this.pz);
+    // Posisi visual diturunkan sebesar radius fisika bola yang baru (0.35) agar menyentuh lantai
+    this.group.position.set(this.px, this.py - 0.35, this.pz);
     this.group.rotation.y=this.facing;
     this.group.visible=this.alive&&!(this.invT>0&&(this.invT/6|0)%2===0);
     
@@ -594,7 +610,6 @@ function loop(t){
 }
 requestAnimationFrame(loop);
 
-// FUNGSI FULLSCREEN & MULAI GAME
 function enterFullscreen() {
     const docEl = document.documentElement;
     if (docEl.requestFullscreen) { docEl.requestFullscreen({ navigationUI: "hide" }).catch(()=>{}); } 
@@ -634,32 +649,24 @@ let deferredPrompt;
 const btnInstall = document.getElementById('btn-install');
 
 window.addEventListener('beforeinstallprompt', (e) => {
-    // Mencegah Chrome memunculkan mini-infobar secara otomatis
     e.preventDefault();
-    // Menyimpan event agar bisa dipicu nanti
     deferredPrompt = e;
-    // Tampilkan tombol "INSTAL GAME" karena syarat PWA sudah terpenuhi
     btnInstall.style.display = 'block';
 });
 
 btnInstall.addEventListener('click', async () => {
     if (deferredPrompt !== null) {
-        // Panggil pop-up bawaan Chrome (seperti di screenshot Anda)
         deferredPrompt.prompt();
-        // Tunggu respons dari pemain (menerima atau menolak instalasi)
         const { outcome } = await deferredPrompt.userChoice;
         if (outcome === 'accepted') {
             console.log('User menginstal aplikasi');
         }
-        // Kosongkan prompt agar tidak bisa ditekan dua kali
         deferredPrompt = null;
-        // Sembunyikan tombol setelah diklik
         btnInstall.style.display = 'none';
     }
 });
 
 window.addEventListener('appinstalled', () => {
-    // Jika berhasil diinstal, pastikan tombolnya dihilangkan
     btnInstall.style.display = 'none';
     console.log('Aplikasi sukses diinstal ke HP Android');
 });

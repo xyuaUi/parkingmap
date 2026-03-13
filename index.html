@@ -1,15 +1,27 @@
 <!DOCTYPE html>
-<html lang="id">
+<html lang=\"id\">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, orientation=landscape">
-<title>Party BUDU - Parking Map</title>
+    <meta charset=\"UTF-8\">
+    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, orientation=landscape\">
+    <title>Party BUDU 3D</title>
+    
+    <meta name=\"application-name\" content=\"Party BUDU\">
+    <meta name=\"apple-mobile-web-app-title\" content=\"Party BUDU\">
+    <meta name=\"apple-mobile-web-app-capable\" content=\"yes\">
+    <meta name=\"apple-mobile-web-app-status-bar-style\" content=\"black-translucent\">
+    <meta name=\"theme-color\" content=\"#000000\">
+    <meta name=\"mobile-web-app-capable\" content=\"yes\">
+    <meta name=\"msapplication-tap-highlight\" content=\"no\">
+    
+    <link rel=\"manifest\" href=\"manifest.json\">
+    <link rel=\"icon\" href=\"assets/icons/icon-96x96.png\" type=\"image/png\">
+    <link rel=\"apple-touch-icon\" href=\"assets/icons/icon-192x192.png\">
+
 <style>
 *{margin:0;padding:0;box-sizing:border-box;}
 html,body{width:100%;height:100%;overflow:hidden;background:#000;font-family:'Segoe UI',sans-serif;touch-action:none;}
 canvas{display:block;}
 
-/* Area sentuh bebas untuk putar kamera */
 #touch-area{position:absolute;inset:0;z-index:1;pointer-events:all;}
 
 #hud{position:fixed;inset:0;pointer-events:none;z-index:10;}
@@ -30,7 +42,6 @@ canvas{display:block;}
 @keyframes kfpop{from{transform:scale(0.7);opacity:0}to{transform:scale(1);opacity:1}}
 @keyframes kffade{to{opacity:0}}
 
-/* Kontrol ditaruh di atas touch-area */
 #controls{position:fixed;bottom:0;left:0;right:0;height:160px;pointer-events:none;display:flex;align-items:flex-end;justify-content:space-between;padding:0 20px 20px;z-index:5;}
 #joystick-zone{width:130px;height:130px;position:relative;background:rgba(255,255,255,0.07);border:1.5px solid rgba(255,255,255,0.18);border-radius:50%;flex-shrink:0;pointer-events:all;}
 #joystick-knob{width:50px;height:50px;border-radius:50%;background:rgba(255,255,255,0.28);border:2px solid rgba(255,255,255,0.5);position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);pointer-events:none;}
@@ -143,16 +154,13 @@ const gMat=new CANNON.Material('g'),pMat=new CANNON.Material('p');
 phys.addContactMaterial(new CANNON.ContactMaterial(gMat,pMat,{friction:.4,restitution:.05}));
 phys.addContactMaterial(new CANNON.ContactMaterial(pMat,pMat,{friction:.2,restitution:.28}));
 
-// Pijakan Dasar Transparan. 
-// Vec3(25, 0.5, 25) artinya Map Lebar Fisiknya adalah 50x50. 
-// Jika karakter melewati batas 50x50 ini, dia akan JATUH.
 const groundBody = new CANNON.Body({ mass: 0, material: gMat });
 groundBody.addShape(new CANNON.Box(new CANNON.Vec3(25, 0.5, 25))); 
 groundBody.position.set(0, -0.5, 0); 
 groundBody.isPlatform = true;
 phys.addBody(groundBody);
 
-// ── Asset Loaders (GLB via Folder GitHub) ──
+// ── Asset Loaders (GLB) ──
 const gltfLoader = new THREE.GLTFLoader();
 let charTemplate = null;
 let assetsLoaded = 0;
@@ -165,28 +173,19 @@ function checkLoadReady() {
     }
 }
 
-// 1. Muat Map dari Folder map/map.glb
 gltfLoader.load('./map/map.glb', (gltf) => {
-    // Memperlebar/membesarkan ukuran map 3x lipat
     gltf.scene.scale.set(3, 3, 3);
     scene.add(gltf.scene);
     gltf.scene.traverse(c => { if(c.isMesh) { c.castShadow = true; c.receiveShadow = true; } });
     checkLoadReady();
-}, undefined, (err) => {
-    console.log('Map tidak ditemukan, lanjut pakai ruang kosong.', err);
-    checkLoadReady(); 
-});
+}, undefined, (err) => { checkLoadReady(); });
 
-// 2. Muat Karakter dari Folder karakter/karakter.glb
 gltfLoader.load('./karakter/karakter.glb', (gltf) => {
     charTemplate = gltf.scene;
     charTemplate.traverse(c => { if(c.isMesh) { c.castShadow = true; c.receiveShadow = true; } });
     players.forEach(p => p.attachGLB()); 
     checkLoadReady();
-}, undefined, (err) => {
-    console.log('Karakter tidak ditemukan, pakai karakter darurat.', err);
-    checkLoadReady();
-});
+}, undefined, (err) => { checkLoadReady(); });
 
 // ── Utils ──
 function hpHex(p){return p>.6?0x4caf50:p>.3?0xff9800:0xf44336;}
@@ -204,15 +203,9 @@ function makeBar(col){
   m.renderOrder=999;return m;
 }
 
-// Menentukan titik jatuh (Spawn) secara acak
 function getRandomSpawn() {
-  // Area spawn adalah 30x30 meter di tengah map
   const range = 30; 
-  return [
-    (Math.random() - 0.5) * range,
-    6, // Jatuh dari ketinggian 6
-    (Math.random() - 0.5) * range
-  ];
+  return [(Math.random() - 0.5) * range, 6, (Math.random() - 0.5) * range];
 }
 
 // ── FX & UI ──
@@ -288,28 +281,24 @@ class Player{
     this.modelGroup=new THREE.Group();
     this.group.add(this.modelGroup);
     
-    // Model Darurat
     this.createFallbackModel();
-    this.attachGLB(); // Langsung pasang jika sudah diload
+    this.attachGLB();
 
-    // Billboards (Nama dan HP Bar)
     this.nSprite=makeSprite(this.name,this.color);
     this.nSprite.position.y=1.85;this.group.add(this.nSprite);
     this.hpBg=makeBar(0x222222);this.hpFg=makeBar(this.color);
     this.hpBg.position.set(0,1.45,.01);this.hpFg.position.set(0,1.45,.02);
     this.group.add(this.hpBg);this.group.add(this.hpFg);
 
-    // Ground shadow
     this.shdMesh=new THREE.Mesh(new THREE.CircleGeometry(.5,14),new THREE.MeshBasicMaterial({color:0x000000,transparent:true,opacity:.3}));
     this.shdMesh.rotation.x=-Math.PI/2;this.shdMesh.position.y=.02;
     this.group.add(this.shdMesh);
 
     scene.add(this.group);
 
-    // Physics
     this.body=new CANNON.Body({mass:2,material:pMat,linearDamping:.2,angularDamping:1});
-    this.body.addShape(new CANNON.Sphere(.48)); // Jari-jari sphere adalah 0.48
-    this.body.position.set(...getRandomSpawn()); // Spawn Secara Acak di map
+    this.body.addShape(new CANNON.Sphere(.48));
+    this.body.position.set(...getRandomSpawn());
     this.body.fixedRotation=true;this.body.updateMassProperties();this.body.playerId=id;
     phys.addBody(this.body);
   }
@@ -329,14 +318,12 @@ class Player{
 
   attachGLB() {
     if(!charTemplate) return;
-    // Hapus model darurat, ganti dengan file asli
     while(this.modelGroup.children.length > 0) { this.modelGroup.remove(this.modelGroup.children[0]); }
     const clone = charTemplate.clone();
     this.scaleAndCenterModel(clone);
   }
 
   scaleAndCenterModel(model) {
-    // Agar kaki menyentuh aspal: pusatkan model dan tarik bawahnya (min.y) ke 0
     const box = new THREE.Box3().setFromObject(model);
     const sz = new THREE.Vector3(); box.getSize(sz);
     const sc = 1.2 / Math.max(sz.x, sz.y, sz.z);
@@ -346,7 +333,7 @@ class Player{
     const center = new THREE.Vector3(); box2.getCenter(center);
     model.position.x -= center.x;
     model.position.z -= center.z;
-    model.position.y -= box2.min.y; // Kaki berada tepat di posisi Y = 0 (origin)
+    model.position.y -= box2.min.y;
     this.modelGroup.add(model);
   }
 
@@ -355,7 +342,7 @@ class Player{
   get pz(){return this.body.position.z;}
 
   respawn(){
-    this.body.position.set(...getRandomSpawn()); // Respawn acak di area map
+    this.body.position.set(...getRandomSpawn());
     this.body.velocity.set(0,0,0);this.body.angularVelocity.set(0,0,0);
     this.hp=100;this.stunT=0;this.invT=110;this.group.visible=true;
   }
@@ -427,7 +414,6 @@ class Player{
     if(this.stunT>0)this.stunT--;if(this.invT>0)this.invT--;
     if(this.comboT>0)this.comboT--;else this.combo=0;
     
-    // MENYENTUH ASPAL (Kalkulasi akurat dikurangi Radius Fisik 0.48)
     this.group.position.set(this.px, this.py - 0.48, this.pz);
     this.group.rotation.y=this.facing;
     this.group.visible=this.alive&&!(this.invT>0&&(this.invT/6|0)%2===0);
@@ -446,7 +432,6 @@ class Player{
     const hs=Math.sqrt(this.body.velocity.x**2+this.body.velocity.z**2);
     if(hs>16){this.body.velocity.x=this.body.velocity.x/hs*16;this.body.velocity.z=this.body.velocity.z/hs*16;}
     
-    // JATUH = MATI (Jika keluar dari batas fisik lantai)
     if(this.py < -15) this.takeDmg(this.hp,0,0,0,null);
   }
 }
@@ -482,7 +467,7 @@ jZone.addEventListener('touchcancel', endJoy);
 
 // FULL SCREEN CAMERA SWIPE
 const touchArea=document.getElementById('touch-area');
-let camDrag=false,camLX=0,camLY=0,camH=0,camV=.35; // Sudut kamera default dibuat lebih datar
+let camDrag=false,camLX=0,camLY=0,camH=0,camV=.35;
 function onCamD(dx,dy){camH-=dx*.008;camV=Math.max(.05,Math.min(1.1,camV-dy*.005));}
 
 touchArea.addEventListener('touchstart',e=>{e.preventDefault();camDrag=true;camLX=e.touches[0].clientX;camLY=e.touches[0].clientY;},{passive:false});
@@ -543,13 +528,11 @@ function initGame(){
 
 function updateCam(){
   const p0=players[0];
-  // Target titik tengah kamera agak direndahkan (mendekati badan)
   const focus=p0&&p0.alive?new THREE.Vector3(p0.px, p0.py + 0.5, p0.pz):new THREE.Vector3(0,2,0);
   camTgt.lerp(focus,.08);
   
-  // PERBAIKAN JARAK: Menjadi jauh lebih dekat dengan karakter
   const aspect = innerWidth / innerHeight;
-  const camDist = aspect > 1 ? 5.5 : 10; // Landscape 5.5 (sangat dekat), Portrait 10
+  const camDist = aspect > 1 ? 5.5 : 10;
 
   const tx=camTgt.x+Math.sin(camH)*Math.cos(camV)*camDist;
   const ty=camTgt.y+Math.sin(camV)*camDist;
@@ -604,12 +587,51 @@ function loop(t){
 }
 requestAnimationFrame(loop);
 
+// FUNGSI FULLSCREEN & MULAI GAME
+function enterFullscreen() {
+    const docEl = document.documentElement;
+    if (docEl.requestFullscreen) { docEl.requestFullscreen({ navigationUI: "hide" }).catch(()=>{}); } 
+    else if (docEl.webkitRequestFullscreen) { docEl.webkitRequestFullscreen({ navigationUI: "hide" }); } 
+    else if (docEl.msRequestFullscreen) { docEl.msRequestFullscreen(); }
+}
+
 document.getElementById('btn-start').addEventListener('click',()=>{
-  document.getElementById('ov-start').classList.remove('show');initGame();
+  enterFullscreen(); // Minta fullscreen saat user menekan MULAI MAIN
+  document.getElementById('ov-start').classList.remove('show');
+  initGame();
 });
+
 document.getElementById('btn-restart').addEventListener('click',()=>{
-  document.getElementById('ov-end').classList.remove('show');initGame();
+  enterFullscreen();
+  document.getElementById('ov-end').classList.remove('show');
+  initGame();
+});
+
+// Tetap Fullscreen Saat Ukuran Layar Berubah
+window.addEventListener('resize', () => {
+    if (!document.fullscreenElement && gameOn) {
+        enterFullscreen();
+    }
 });
 </script>
+
+<script>
+if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./service-worker.js')
+            .then(reg => console.log('Service Worker terdaftar:', reg.scope))
+            .catch(err => console.log('Gagal mendaftarkan Service Worker:', err));
+    });
+}
+
+// Tombol Instal PWA Prompt
+let deferredPrompt;
+window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    deferredPrompt = e;
+    console.log('Tombol instal aplikasi siap ditampilkan (PWA Installable)');
+});
+</script>
+
 </body>
 </html>

@@ -100,7 +100,7 @@ canvas{display:block;}
 
 <div class="overlay show" id="ov-start">
   <div class="ov-title">Party BUDU</div>
-  <div class="ov-sub" id="load-status" style="color:#ffcc00">Memuat Aset dari GitHub...</div>
+  <div class="ov-sub" id="load-status" style="color:#ffcc00; max-width: 80%; line-height:1.5;">Memuat Aset dari GitHub...</div>
   <div class="ov-hint" style="margin-top:10px;">Joystick kiri = gerak &nbsp;|&nbsp; Usap layar kosong = putar kamera<br>🦘 lompat &nbsp;|&nbsp; 👊 pukul &nbsp;|&nbsp; 🤝 grab &nbsp;|&nbsp; ⚡ special</div>
   
   <div style="display:flex; gap:12px; margin-top:10px;">
@@ -160,35 +160,54 @@ const gMat=new CANNON.Material('g'),pMat=new CANNON.Material('p');
 phys.addContactMaterial(new CANNON.ContactMaterial(gMat,pMat,{friction:.4,restitution:.05}));
 phys.addContactMaterial(new CANNON.ContactMaterial(pMat,pMat,{friction:.2,restitution:.28}));
 
-// Ukuran Map Fisika dikembalikan normal (Lebar 30x30 meter)
-const groundBody = new CANNON.Body({ mass: 0, material: gMat });
-groundBody.addShape(new CANNON.Box(new CANNON.Vec3(15, 0.5, 15))); 
-groundBody.position.set(0, -0.5, 0); 
-groundBody.isPlatform = true;
-phys.addBody(groundBody);
-
 // ── Asset Loaders (GLB) ──
 const gltfLoader = new THREE.GLTFLoader();
 let charTemplate = null;
 let assetsLoaded = 0;
+let errorMsg = "";
 const statusEl = document.getElementById('load-status');
 
 function checkLoadReady() {
     assetsLoaded++;
     if(assetsLoaded >= 2) {
-        statusEl.textContent = "✅ Siap Dimainkan!";
+        if(errorMsg === "") {
+            statusEl.textContent = "✅ Semua Aset Siap!";
+        } else {
+            statusEl.innerHTML = errorMsg + "<br><span style='color:white'>Tetap bisa main dengan karakter/map darurat.</span>";
+        }
         document.getElementById('btn-start').style.display = 'block';
     }
 }
 
-// 1. Load Map (Ukuran Normal 1x1)
+// 1. Load Map & BUAT FISIKA SOLID OTOMATIS SESUAI UKURAN MAP
 gltfLoader.load('./map/map.glb', (gltf) => {
     scene.add(gltf.scene);
     gltf.scene.traverse(c => { if(c.isMesh) { c.castShadow = true; c.receiveShadow = true; } });
+    
+    // MENGUKUR UKURAN MAP SECARA OTOMATIS
+    const bbox = new THREE.Box3().setFromObject(gltf.scene);
+    const size = new THREE.Vector3();
+    bbox.getSize(size);
+    const center = new THREE.Vector3();
+    bbox.getCenter(center);
+
+    // MEMBUAT LANTAI FISIKA SEUKURAN MAP (Selain kotak ini = JATUH)
+    const groundBody = new CANNON.Body({ mass: 0, material: gMat });
+    groundBody.addShape(new CANNON.Box(new CANNON.Vec3(size.x / 2, 0.5, size.z / 2))); 
+    groundBody.position.set(center.x, -0.5, center.z); 
+    groundBody.isPlatform = true;
+    phys.addBody(groundBody);
+
     checkLoadReady();
 }, undefined, (err) => { 
-    console.error("Gagal load Map", err);
-    statusEl.innerHTML += "<br>⚠️ Error: map.glb tidak ditemukan!";
+    errorMsg += "❌ Error: map.glb tidak ditemukan<br>";
+    
+    // Jika map gagal dimuat, buat lantai kotak darurat
+    const groundBody = new CANNON.Body({ mass: 0, material: gMat });
+    groundBody.addShape(new CANNON.Box(new CANNON.Vec3(10, 0.5, 10))); 
+    groundBody.position.set(0, -0.5, 0); groundBody.isPlatform = true;
+    phys.addBody(groundBody);
+    
     checkLoadReady(); 
 });
 
@@ -199,8 +218,7 @@ gltfLoader.load('./karakter/karakter.glb', (gltf) => {
     players.forEach(p => p.attachGLB()); 
     checkLoadReady();
 }, undefined, (err) => { 
-    console.error("Gagal load Karakter", err);
-    statusEl.innerHTML += "<br>⚠️ Error: karakter.glb tidak ditemukan! Cek folder.";
+    errorMsg += "❌ Error: karakter.glb tidak ditemukan<br>";
     checkLoadReady(); 
 });
 
@@ -221,8 +239,8 @@ function makeBar(col){
 }
 
 function getRandomSpawn() {
-  const range = 20; // Area spawn disesuaikan ukurannya
-  return [(Math.random() - 0.5) * range, 6, (Math.random() - 0.5) * range];
+  const range = 8; // Area spawn dibuat sempit di tengah agar tidak jatuh saat baru lahir
+  return [(Math.random() - 0.5) * range, 4, (Math.random() - 0.5) * range];
 }
 
 // ── FX & UI ──
@@ -298,25 +316,26 @@ class Player{
     this.modelGroup=new THREE.Group();
     this.group.add(this.modelGroup);
     
+    // Model Darurat Diperkecil Setengah
     this.createFallbackModel();
     this.attachGLB();
 
-    // Penyesuaian Tinggi Indikator Nama & HP (karena karakter lebih kecil)
+    // Tinggi Nama & Darah diturunkan karena karakter kecil
     this.nSprite=makeSprite(this.name,this.color);
-    this.nSprite.position.y=1.35;this.group.add(this.nSprite);
+    this.nSprite.position.y=0.9;this.group.add(this.nSprite);
     this.hpBg=makeBar(0x222222);this.hpFg=makeBar(this.color);
-    this.hpBg.position.set(0,1.05,.01);this.hpFg.position.set(0,1.05,.02);
+    this.hpBg.position.set(0,0.65,.01);this.hpFg.position.set(0,0.65,.02);
     this.group.add(this.hpBg);this.group.add(this.hpFg);
 
-    this.shdMesh=new THREE.Mesh(new THREE.CircleGeometry(.4,14),new THREE.MeshBasicMaterial({color:0x000000,transparent:true,opacity:.3}));
+    this.shdMesh=new THREE.Mesh(new THREE.CircleGeometry(.25,14),new THREE.MeshBasicMaterial({color:0x000000,transparent:true,opacity:.3}));
     this.shdMesh.rotation.x=-Math.PI/2;this.shdMesh.position.y=.02;
     this.group.add(this.shdMesh);
 
     scene.add(this.group);
 
-    // Fisika karakter diperkecil (Radius Bola menjadi 0.35)
+    // BOLA FISIKA DIPERKECIL (Radius 0.2)
     this.body=new CANNON.Body({mass:2,material:pMat,linearDamping:.2,angularDamping:1});
-    this.body.addShape(new CANNON.Sphere(.35));
+    this.body.addShape(new CANNON.Sphere(.2));
     this.body.position.set(...getRandomSpawn());
     this.body.fixedRotation=true;this.body.updateMassProperties();this.body.playerId=id;
     phys.addBody(this.body);
@@ -326,12 +345,12 @@ class Player{
     const mesh = new THREE.Group();
     const bodyMat = new THREE.MeshLambertMaterial({color: this.color});
     const skinMat = new THREE.MeshLambertMaterial({color: 0xffceb4});
-    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.3, 0.6, 16), bodyMat);
-    body.position.y = 0.3; body.castShadow = body.receiveShadow = true; mesh.add(body);
-    const head = new THREE.Mesh(new THREE.SphereGeometry(0.25, 16, 16), skinMat);
-    head.position.y = 0.8; head.castShadow = head.receiveShadow = true; mesh.add(head);
-    const visor = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.1, 0.2), new THREE.MeshLambertMaterial({color: 0x222222}));
-    visor.position.set(0, 0.85, 0.18); mesh.add(visor);
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.18, 0.35, 16), bodyMat);
+    body.position.y = 0.175; body.castShadow = body.receiveShadow = true; mesh.add(body);
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.15, 16, 16), skinMat);
+    head.position.y = 0.5; head.castShadow = head.receiveShadow = true; mesh.add(head);
+    const visor = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.08, 0.15), new THREE.MeshLambertMaterial({color: 0x222222}));
+    visor.position.set(0, 0.5, 0.12); mesh.add(visor);
     this.scaleAndCenterModel(mesh);
   }
 
@@ -345,8 +364,8 @@ class Player{
   scaleAndCenterModel(model) {
     const box = new THREE.Box3().setFromObject(model);
     const sz = new THREE.Vector3(); box.getSize(sz);
-    // Skala Visual Karakter Diperkecil menjadi 0.8
-    const sc = 0.8 / Math.max(sz.x, sz.y, sz.z);
+    // Skala Visual Karakter Dikecilkan Drastis Menjadi 0.45
+    const sc = 0.45 / Math.max(sz.x, sz.y, sz.z);
     model.scale.setScalar(sc);
     
     const box2 = new THREE.Box3().setFromObject(model);
@@ -384,15 +403,15 @@ class Player{
     hudUpdate();
   }
   
-  // Tenaga Lompat dikurangi (dari 13 menjadi 9)
-  jump(){if(this.jumpCount>=2)return;this.body.velocity.y=9;this.jumpCount++;this.onGround=false;}
+  // TENAGA LOMPATAN DIPENDEKKAN (Dari 9 turun ke 6.5)
+  jump(){if(this.jumpCount>=2)return;this.body.velocity.y=6.5;this.jumpCount++;this.onGround=false;}
   
   punch(all){
     if(!this.alive||this.punchCD>0||this.stunT>0)return;this.punchCD=28;
     all.forEach(p=>{
       if(p===this||!p.alive)return;
       const dx=p.px-this.px,dy=p.py-this.py,dz=p.pz-this.pz,d=Math.sqrt(dx*dx+dy*dy+dz*dz);
-      if(d<1.2){const f=10/d;p.takeDmg(16+Math.random()*9|0,dx*f,4.5,dz*f,this);shake(5);hitFx(p.group.position);}
+      if(d<0.9){const f=10/d;p.takeDmg(16+Math.random()*9|0,dx*f,4.5,dz*f,this);shake(5);hitFx(p.group.position);}
     });
   }
   grab(all){
@@ -401,7 +420,7 @@ class Player{
     all.forEach(p=>{
       if(p===this||!p.alive)return;
       const dx=p.px-this.px,dy=p.py-this.py,dz=p.pz-this.pz;
-      if(Math.sqrt(dx*dx+dy*dy+dz*dz)<1.4){
+      if(Math.sqrt(dx*dx+dy*dy+dz*dz)<1.2){
         const pw=14+this.combo*.5;p.body.velocity.set(fx*pw,8,fz*pw);
         p.takeDmg(12,fx*8,3,fz*8,this);shake(4);
       }
@@ -412,7 +431,7 @@ class Player{
     all.forEach(p=>{
       if(p===this||!p.alive)return;
       const dx=p.px-this.px,dy=p.py-this.py,dz=p.pz-this.pz,d=Math.sqrt(dx*dx+dy*dy+dz*dz);
-      if(d<5.5){const pct=1-d/5.5,f=pct*13;p.takeDmg(Math.floor(26*pct),(dx/d)*f,5,(dz/d)*f,this);}
+      if(d<3.5){const pct=1-d/3.5,f=pct*13;p.takeDmg(Math.floor(26*pct),(dx/d)*f,5,(dz/d)*f,this);}
     });
     waveFx(this.group.position.clone());shake(9);
   }
@@ -424,11 +443,11 @@ class Player{
     const tgt=this.botTarget||alive[0];if(!tgt.alive){this.botTarget=null;return;}
     const dx=tgt.px-this.px,dz=tgt.pz-this.pz,d2=Math.sqrt(dx*dx+dz*dz);
     this.facing=Math.atan2(dx,dz);
-    if(d2>1.5){const s=5.5;this.body.velocity.x=dx/d2*s;this.body.velocity.z=dz/d2*s;}
+    if(d2>1){const s=5.5;this.body.velocity.x=dx/d2*s;this.body.velocity.z=dz/d2*s;}
     if(this.onGround&&this.botJumpT<=0&&(tgt.py>this.py+1.5||Math.random()<.012)){this.jump();this.botJumpT=55;}
     const fd=Math.sqrt(dx*dx+(tgt.py-this.py)**2+dz*dz);
-    if(fd<1.2){if(this.punchCD<=0&&Math.random()<.07)this.punch(all);if(this.grabCD<=0&&Math.random()<.03)this.grab(all);}
-    if(fd<5.5&&this.specCD<=0&&Math.random()<.005)this.special(all);
+    if(fd<0.9){if(this.punchCD<=0&&Math.random()<.07)this.punch(all);if(this.grabCD<=0&&Math.random()<.03)this.grab(all);}
+    if(fd<3.5&&this.specCD<=0&&Math.random()<.005)this.special(all);
   }
   update(all){
     if(!this.alive)return;
@@ -436,8 +455,8 @@ class Player{
     if(this.stunT>0)this.stunT--;if(this.invT>0)this.invT--;
     if(this.comboT>0)this.comboT--;else this.combo=0;
     
-    // Posisi visual diturunkan sebesar radius fisika bola yang baru (0.35) agar menyentuh lantai
-    this.group.position.set(this.px, this.py - 0.35, this.pz);
+    // Posisi visual disesuaikan dengan radius bola fisika yang baru (0.2)
+    this.group.position.set(this.px, this.py - 0.2, this.pz);
     this.group.rotation.y=this.facing;
     this.group.visible=this.alive&&!(this.invT>0&&(this.invT/6|0)%2===0);
     
@@ -453,7 +472,7 @@ class Player{
     const sc=Math.max(.05,1-Math.max(0,this.py)*.07);this.shdMesh.scale.set(sc,sc,sc);
     
     const hs=Math.sqrt(this.body.velocity.x**2+this.body.velocity.z**2);
-    if(hs>16){this.body.velocity.x=this.body.velocity.x/hs*16;this.body.velocity.z=this.body.velocity.z/hs*16;}
+    if(hs>14){this.body.velocity.x=this.body.velocity.x/hs*14;this.body.velocity.z=this.body.velocity.z/hs*14;}
     
     if(this.py < -15) this.takeDmg(this.hp,0,0,0,null);
   }
@@ -551,11 +570,12 @@ function initGame(){
 
 function updateCam(){
   const p0=players[0];
-  const focus=p0&&p0.alive?new THREE.Vector3(p0.px, p0.py + 0.5, p0.pz):new THREE.Vector3(0,2,0);
+  const focus=p0&&p0.alive?new THREE.Vector3(p0.px, p0.py + 0.3, p0.pz):new THREE.Vector3(0,2,0);
   camTgt.lerp(focus,.08);
   
+  // Kamera didekatkan karena karakter sangat kecil
   const aspect = innerWidth / innerHeight;
-  const camDist = aspect > 1 ? 5.5 : 10;
+  const camDist = aspect > 1 ? 3.5 : 6;
 
   const tx=camTgt.x+Math.sin(camH)*Math.cos(camV)*camDist;
   const ty=camTgt.y+Math.sin(camV)*camDist;
@@ -585,7 +605,7 @@ function loop(t){
       const ml=Math.sqrt(mx*mx+mz*mz);
       if(ml>.01){
         mx/=ml;mz/=ml;
-        p0.body.velocity.x=mx*14; p0.body.velocity.z=mz*14; 
+        p0.body.velocity.x=mx*11; p0.body.velocity.z=mz*11; 
         p0.facing=Math.atan2(mx,mz);
       }
       if((keys['KeyZ']||keys['ArrowUp'])&&!keys['_jh']){p0.jump();keys['_jh']=true;}
